@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Voices - Text to Speech</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Initial Setup Modal -->
+    <div id="setupModal" class="setup-modal">
+        <div class="setup-modal-content">
+            <div class="setup-header">
+                <div>
+                    <h2>Welcome to Gemini Voices</h2>
+                    <p class="setup-subtitle">Configure your settings to get started</p>
+                </div>
+                <button id="closeSetupModalBtn" class="close-btn" title="Close" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="setup-body">
+                <form id="setupForm">
+                    <div class="setup-section">
+                        <h3>API Configuration</h3>
+                        <div class="setup-item">
+                            <label for="setupApiKey">
+                                Gemini API Key
+                                <span class="required">*</span>
+                            </label>
+                            <input 
+                                type="password" 
+                                id="setupApiKey" 
+                                placeholder="Enter your Gemini API key"
+                                required
+                                autocomplete="off"
+                            >
+                            <p class="field-hint">Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
+                        </div>
+                        <div class="setup-item">
+                            <label for="setupModelId">
+                                TTS Model
+                                <span class="required">*</span>
+                            </label>
+                            <select id="setupModelId" required>
+                                <option value="">Select a model...</option>
+                                <option value="gemini-2.5-pro-preview-tts">gemini-2.5-pro-preview-tts</option>
+                                <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts</option>
+                            </select>
+                            <div id="modelDescription" class="model-description"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="privacy-notice">
+                        <div class="privacy-icon">🔒</div>
+                        <div class="privacy-text">
+                            <strong>Privacy Notice:</strong> Your API key is stored locally in your browser and never sent to our servers. It's only used to communicate with Google's Gemini API.
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="setup-footer">
+                <button type="submit" form="setupForm" id="saveSetupBtn" class="btn-primary">Save & Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <header>
+            <div class="header-content">
+                <div>
+                    <h1>Gemini Voices</h1>
+                    <p class="subtitle">Test Gemini voices and hear what they sound like</p>
+                </div>
+                <div class="header-actions">
+                    <button id="editConfigBtn" class="btn-secondary" title="Edit Configuration">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Edit Config
+                    </button>
+                    <button id="settingsBtn" class="btn-secondary" title="Edit Settings">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                        </svg>
+                        Edit Settings
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <form id="synthesisForm" class="synthesis-form">
+                <div class="form-group">
+                    <label for="textInput">Text to Synthesize</label>
+                    <div class="sample-texts">
+                        <span class="sample-label">Quick samples:</span>
+                        <button type="button" class="sample-btn" data-sample="greeting" title="Click to replace text with greeting sample">
+                            <span class="sample-icon">↩️</span>
+                            <span>Greeting</span>
+                        </button>
+                        <button type="button" class="sample-btn" data-sample="business" title="Click to replace text with business sample">
+                            <span class="sample-icon">↩️</span>
+                            <span>Business</span>
+                        </button>
+                        <button type="button" class="sample-btn" data-sample="customer" title="Click to replace text with customer service sample">
+                            <span class="sample-icon">↩️</span>
+                            <span>Customer Service</span>
+                        </button>
+                        <button type="button" class="sample-btn" data-sample="announcement" title="Click to replace text with announcement sample">
+                            <span class="sample-icon">↩️</span>
+                            <span>Announcement</span>
+                        </button>
+                    </div>
+                    <textarea 
+                        id="textInput" 
+                        name="text" 
+                        rows="6" 
+                        placeholder="Hi, you're through to [Business Name]. My name's Vera — how may I help you today?"
+                        required
+                    ></textarea>
+                    <div class="char-count">
+                        <span id="charCount">0</span> <span class="char-label">characters</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group form-group-inline">
+                        <label for="genderSelect" class="inline-label">Filter:</label>
+                        <select id="genderSelect" name="gender" class="inline-select">
+                            <option value="all">All Voices</option>
+                            <option value="Male">♂ Male</option>
+                            <option value="Female">♀ Female</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-group-flex">
+                        <label for="modelSelect">
+                            Voice Model
+                            <span class="label-hint" id="voiceModelHint" style="display: none;"></span>
+                        </label>
+                        <select id="modelSelect" name="model_name" required>
+                            <option value="">Choose a voice...</option>
+                        </select>
+                    </div>
+                </div>
+
+                    <div class="form-group">
+                        <label for="expressionSelect">
+                            Speaking Style
+                            <span class="label-hint" title="Controls the tone and delivery style of the voice">ℹ️</span>
+                        </label>
+                        <select id="expressionSelect" name="expression" required>
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+
+                <div class="form-validation" id="formValidation" style="display: none;">
+                    <span class="validation-icon">ℹ️</span>
+                    <span class="validation-text"></span>
+                </div>
+                <button type="submit" id="generateBtn" class="btn-primary">
+                    <span class="btn-text">Generate Speech</span>
+                    <span class="btn-shortcut">Ctrl+Enter</span>
+                    <span class="btn-loader" id="loader" style="display: none;">
+                        <span class="spinner"></span>
+                    </span>
+                </button>
+            </form>
+
+            <div id="errorMessage" class="error-message" style="display: none;">
+                <span class="error-icon">⚠️</span>
+                <span class="error-text"></span>
+            </div>
+
+            <div id="successMessage" class="success-message" style="display: none;">
+                <span class="success-icon">✓</span>
+                <span class="success-text"></span>
+            </div>
+
+            <div id="audioSection" class="audio-section" style="display: none;">
+                <div class="audio-player-wrapper">
+                    <audio id="audioPlayer" controls></audio>
+                    <button id="downloadBtn" class="btn-secondary">Download Audio</button>
+                </div>
+                <div class="audio-info">
+                    <p><strong>Model:</strong> <span id="modelUsed"></span></p>
+                    <p><strong>Expression:</strong> <span id="expressionUsed"></span></p>
+                    <p><strong>Text Length:</strong> <span id="textLength"></span> characters</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal" style="display: none;">
+        <div class="settings-modal-content">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button id="closeSettingsBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="settings-tabs">
+                <button class="settings-tab active" data-tab="settings">Settings</button>
+                <button class="settings-tab" data-tab="explanation">How It Works</button>
+            </div>
+            <div class="settings-body">
+                <!-- Settings Tab Content -->
+                <div id="settingsTabContent" class="tab-content active">
+                <div class="settings-section">
+                    <h3>Audio Settings</h3>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>Sample Rate (Hz)</label>
+                            <input type="number" id="settingSampleRate" min="8000" max="48000" step="1000">
+                        </div>
+                        <div class="setting-item">
+                            <label>Channels</label>
+                            <select id="settingChannels">
+                                <option value="1">Mono (1)</option>
+                                <option value="2">Stereo (2)</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label>Sample Width (bytes)</label>
+                            <select id="settingSampleWidth">
+                                <option value="1">8-bit (1)</option>
+                                <option value="2">16-bit (2)</option>
+                                <option value="4">32-bit (4)</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label>Output Format</label>
+                            <select id="settingFormat">
+                                <option value="wav">WAV</option>
+                                <option value="mp3">MP3</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Prompt Settings</h3>
+                    <div class="setting-item">
+                        <label>Accent Instruction</label>
+                        <textarea id="settingAccentInstruction" rows="2"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label>Model Name Placeholder</label>
+                        <input type="text" id="settingModelPlaceholder">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Default Values</h3>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>Default Model</label>
+                            <select id="settingDefaultModel"></select>
+                        </div>
+                        <div class="setting-item">
+                            <label>Default Expression</label>
+                            <select id="settingDefaultExpression">
+                                <option value="professional_neutral">Professional Neutral</option>
+                                <option value="warm_friendly">Warm Friendly</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Expression Instructions</h3>
+                    <div class="setting-item">
+                        <label>Professional Neutral</label>
+                        <textarea id="settingExprProfessional" rows="4"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label>Warm Friendly</label>
+                        <textarea id="settingExprWarm" rows="4"></textarea>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Sample Texts</h3>
+                    <div class="setting-item">
+                        <label>Greeting</label>
+                        <textarea id="settingSampleGreeting" rows="2"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label>Business</label>
+                        <textarea id="settingSampleBusiness" rows="2"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label>Customer Service</label>
+                        <textarea id="settingSampleCustomer" rows="2"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label>Announcement</label>
+                        <textarea id="settingSampleAnnouncement" rows="2"></textarea>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Explanation Tab Content -->
+                <div id="explanationTabContent" class="tab-content">
+                    <div class="explanation-section">
+                        <h3>How Gemini Processes Your Inputs</h3>
+                        <p class="explanation-intro">When you generate speech, here's exactly what gets sent to Gemini and how it's processed:</p>
+
+                        <div class="explanation-step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h4>Input Collection</h4>
+                                <p>You provide:</p>
+                                <ul>
+                                    <li><strong>Text</strong> - The text to synthesize</li>
+                                    <li><strong>Voice Model</strong> - e.g., "Puck", "Kore" (selected from dropdown)</li>
+                                    <li><strong>Expression</strong> - e.g., "professional_neutral" or "warm_friendly"</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="explanation-step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h4>Text Processing</h4>
+                                <p>The system processes your text:</p>
+                                <div class="code-example">
+                                    <div class="code-label">Original Text:</div>
+                                    <code>"Hi, you're through to [Business Name]. My name's Vera — how may I help you today?"</code>
+                                </div>
+                                <div class="code-example">
+                                    <div class="code-label">After Processing (replaces &lt;modelname&gt; placeholder):</div>
+                                    <code>"Hi, you're through to [Business Name]. My name's Puck — how may I help you today?"</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="explanation-step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h4>Prompt Construction</h4>
+                                <p>All instructions are combined into one prompt:</p>
+                                <div class="code-example">
+                                    <div class="code-label">Final Prompt Sent to Gemini:</div>
+                                    <pre><code>Say with a natural British English (UK) accent: Hi, you're through to [Business Name]. My name's Puck — how may I help you today?
+
+Speak in a professional and neutral tone. Maintain a formal, business-like demeanor with clear articulation. Use precise language, avoid emotional expressions, and keep your delivery measured and objective. This tone is appropriate for corporate communications, technical explanations, and formal interactions where clarity and professionalism are paramount.</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="explanation-step">
+                            <div class="step-number">4</div>
+                            <div class="step-content">
+                                <h4>API Call Structure</h4>
+                                <p>Here's the exact structure sent to Gemini:</p>
+                                <div class="code-example">
+                                    <div class="code-label">Request Payload:</div>
+                                    <pre><code>{
+  contents: [{
+    role: 'user',
+    parts: [{
+      text: '[Combined prompt from step 3]'
+    }]
+  }],
+  generationConfig: {
+    responseModalities: ['AUDIO'],
+    speechConfig: {
+      voiceConfig: {
+        prebuiltVoiceConfig: {
+          voiceName: 'Puck'  // Selected voice model
+        }
+      }
+    }
+  }
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="explanation-step">
+                            <div class="step-number">5</div>
+                            <div class="step-content">
+                                <h4>What Each Input Does</h4>
+                                <div class="input-breakdown">
+                                    <div class="input-item">
+                                        <strong>Text Prompt</strong>
+                                        <p>Combined instruction + text + expression guidance. Tells Gemini <em>what</em> to say and <em>how</em> to say it.</p>
+                                    </div>
+                                    <div class="input-item">
+                                        <strong>Voice Name</strong>
+                                        <p>Selects which prebuilt voice to use (Puck, Kore, etc.). This determines the voice character/timbre.</p>
+                                    </div>
+                                    <div class="input-item">
+                                        <strong>Response Modality</strong>
+                                        <p>Requests AUDIO output instead of text. Tells Gemini to generate speech.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="explanation-step">
+                            <div class="step-number">6</div>
+                            <div class="step-content">
+                                <h4>Gemini's Response</h4>
+                                <p>Gemini returns raw PCM audio data (24kHz, 16-bit, mono), which is then converted to WAV format using your audio settings.</p>
+                                <div class="note-box">
+                                    <strong>Note:</strong> Audio settings (sample rate, channels, etc.) are used <em>after</em> Gemini returns the audio to format it. They don't affect what Gemini generates.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="live-example">
+                            <h4>Live Example</h4>
+                            <p>Enter your current settings below to see what would be sent:</p>
+                            <div class="example-controls">
+                                <div class="example-input">
+                                    <label>Text:</label>
+                                    <input type="text" id="exampleText" placeholder="Enter text to see example" value="Hi, you're through to [Business Name]. My name's Vera — how may I help you today?">
+                                </div>
+                                <div class="example-input">
+                                    <label>Voice Model:</label>
+                                    <select id="exampleVoice">
+                                        <option value="Puck">Puck</option>
+                                        <option value="Kore">Kore</option>
+                                    </select>
+                                </div>
+                                <div class="example-input">
+                                    <label>Expression:</label>
+                                    <select id="exampleExpression">
+                                        <option value="professional_neutral">Professional Neutral</option>
+                                        <option value="warm_friendly">Warm Friendly</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="generateExampleBtn" class="btn-secondary">Generate Example</button>
+                            <div id="exampleOutput" class="example-output" style="display: none;">
+                                <h5>Generated Prompt:</h5>
+                                <pre id="examplePrompt"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-footer">
+                <button id="resetSettingsBtn" class="btn-secondary">Reset to Defaults</button>
+                <div>
+                    <button id="cancelSettingsBtn" class="btn-secondary">Cancel</button>
+                    <button id="saveSettingsBtn" class="btn-primary">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config-frontend.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+

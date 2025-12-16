@@ -1,0 +1,17 @@
+{
+  "name": "gemini-voices",
+  "version": "1.0.0",
+  "description": "Gemini TTS Voice Synthesis Application",
+  "main": "index.html",
+  "scripts": {
+    "deploy": "vercel"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.x"
+  }
+}
+
