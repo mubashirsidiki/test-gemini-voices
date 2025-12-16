@@ -52,18 +52,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (saveSetupBtn) {
         saveSetupBtn.addEventListener('click', (e) => {
-            e.preventDefault();
+            // Don't prevent default - let the form submit naturally
+            // The form's submit handler will take care of everything
             logger.debug('Save setup button clicked');
             const form = document.getElementById('setupForm');
             if (form) {
-                // Trigger form validation and submission
-                if (form.checkValidity()) {
-                    logger.debug('Form validation passed, dispatching submit event');
-                    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-                } else {
+                // Just ensure validation - if valid, form will submit naturally
+                if (!form.checkValidity()) {
+                    e.preventDefault();
                     logger.warn('Form validation failed');
                     form.reportValidity();
+                } else {
+                    logger.debug('Form validation passed, allowing natural form submission');
                 }
+            } else {
+                logger.error('Setup form not found when button clicked');
+                e.preventDefault();
             }
         });
         logger.debug('Save setup button click listener attached');
@@ -230,6 +234,29 @@ function setupEventListeners() {
         validateForm();
     });
     
+    // TTS Model ID change - update description and save to config
+    const modelIdSelect = document.getElementById('modelIdSelect');
+    if (modelIdSelect) {
+        modelIdSelect.addEventListener('change', () => {
+            const modelId = modelIdSelect.value;
+            if (modelId && userConfig) {
+                userConfig.modelId = modelId;
+                try {
+                    localStorage.setItem('geminiVoicesUserConfig', JSON.stringify(userConfig));
+                } catch (e) {
+                    logger.error('Failed to save model ID', e);
+                }
+            }
+            updateModelDescriptionForMainForm();
+            validateForm();
+        });
+        // Load current model ID
+        if (userConfig && userConfig.modelId) {
+            modelIdSelect.value = userConfig.modelId;
+            updateModelDescriptionForMainForm();
+        }
+    }
+    
     // Voice model change - update hint and validate
     const modelSelect = document.getElementById('modelSelect');
     modelSelect.addEventListener('change', () => {
@@ -280,7 +307,6 @@ function setupEventListeners() {
     
     // Settings button
     const settingsBtn = document.getElementById('settingsBtn');
-    const editConfigBtn = document.getElementById('editConfigBtn');
     const settingsModal = document.getElementById('settingsModal');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     const cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
@@ -290,12 +316,6 @@ function setupEventListeners() {
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => {
             openSettings();
-        });
-    }
-    
-    if (editConfigBtn) {
-        editConfigBtn.addEventListener('click', () => {
-            openSetupModal(true);
         });
     }
     
@@ -344,6 +364,61 @@ function setupEventListeners() {
         generateExampleBtn.addEventListener('click', generateExample);
     }
     
+    // Test API key button
+    const testApiKeyBtn = document.getElementById('testApiKeyBtn');
+    if (testApiKeyBtn) {
+        testApiKeyBtn.addEventListener('click', async () => {
+            const apiKeyInput = document.getElementById('settingApiKey');
+            const apiKey = apiKeyInput.value.trim();
+            const statusSpan = document.getElementById('apiKeyStatus');
+            
+            if (!apiKey) {
+                showError('Please enter an API key first');
+                return;
+            }
+            
+            testApiKeyBtn.disabled = true;
+            testApiKeyBtn.textContent = 'Testing...';
+            if (statusSpan) {
+                statusSpan.textContent = 'Validating...';
+                statusSpan.style.color = '#f59e0b';
+            }
+            
+            try {
+                const isValid = await validateApiKey(apiKey);
+                if (isValid) {
+                    if (statusSpan) {
+                        statusSpan.textContent = '✓ Valid';
+                        statusSpan.style.color = '#10b981';
+                    }
+                    showSuccess('API key is valid!');
+                } else {
+                    if (statusSpan) {
+                        statusSpan.textContent = '❌ Invalid';
+                        statusSpan.style.color = '#ef4444';
+                    }
+                    showError('Invalid API key. Please check your key and try again.');
+                }
+            } catch (error) {
+                logger.error('Error testing API key', error);
+                if (statusSpan) {
+                    statusSpan.textContent = '⚠ Error';
+                    statusSpan.style.color = '#ef4444';
+                }
+                showError('Failed to validate API key. Please check your connection and try again.');
+            } finally {
+                testApiKeyBtn.disabled = false;
+                testApiKeyBtn.textContent = 'Test API Key';
+            }
+        });
+    }
+    
+    // Model ID change in settings
+    const settingModelId = document.getElementById('settingModelId');
+    if (settingModelId) {
+        settingModelId.addEventListener('change', updateModelDescriptionForSettings);
+    }
+    
     // Setup form
     const setupForm = document.getElementById('setupForm');
     const setupApiKey = document.getElementById('setupApiKey');
@@ -373,7 +448,7 @@ function setupEventListeners() {
         closeSetupModalBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             // Only allow closing if user has already configured (editing mode)
-            if (userConfig.apiKey && userConfig.modelId) {
+            if (userConfig.apiKey) {
                 if (setupModal) {
                     setupModal.style.display = 'none';
                     const mainContainer = document.getElementById('mainContainer');
@@ -391,7 +466,7 @@ function setupEventListeners() {
         setupModal.addEventListener('click', (e) => {
             if (e.target === setupModal) {
                 // Only allow closing if user has already configured (editing mode)
-                if (userConfig.apiKey && userConfig.modelId) {
+                if (userConfig.apiKey) {
                     setupModal.style.display = 'none';
                     const mainContainer = document.getElementById('mainContainer');
                     if (mainContainer) {
@@ -402,14 +477,6 @@ function setupEventListeners() {
         });
     }
     
-    if (setupModelId) {
-        setupModelId.addEventListener('change', updateModelDescription);
-    }
-    
-    // Update model description on load
-    if (setupModelId) {
-        updateModelDescription();
-    }
 }
 
 /**
@@ -420,8 +487,13 @@ function checkUserConfig() {
     if (saved) {
         try {
             userConfig = JSON.parse(saved);
-            if (userConfig && userConfig.apiKey && userConfig.modelId) {
-                // User is configured, show main app
+            if (userConfig && userConfig.apiKey) {
+                // User has API key, show main app (model ID can be set in main form)
+                // Set default model ID if not present
+                if (!userConfig.modelId) {
+                    userConfig.modelId = 'gemini-2.5-flash-preview-tts';
+                    localStorage.setItem('geminiVoicesUserConfig', JSON.stringify(userConfig));
+                }
                 showMainApp();
                 return;
             }
@@ -443,7 +515,6 @@ function checkUserConfig() {
 function showSetupModal() {
     const setupModal = document.getElementById('setupModal');
     const mainContainer = document.getElementById('mainContainer');
-    const setupModelId = document.getElementById('setupModelId');
     
     if (setupModal) {
         setupModal.style.display = 'flex';
@@ -451,60 +522,18 @@ function showSetupModal() {
             mainContainer.style.display = 'none';
         }
         
-        // Load existing values if editing
+        // Load existing API key if editing
         if (userConfig.apiKey) {
             document.getElementById('setupApiKey').value = userConfig.apiKey;
         }
-        // Set default model if not already set
-        if (setupModelId) {
-            if (userConfig.modelId) {
-                setupModelId.value = userConfig.modelId;
-            } else {
-                setupModelId.value = 'gemini-2.5-flash-preview-tts';
-            }
-        }
-        
-        // Ensure event listener is attached for model description
-        if (setupModelId && !setupModelId.hasAttribute('data-listener-attached')) {
-            setupModelId.addEventListener('change', updateModelDescription);
-            setupModelId.setAttribute('data-listener-attached', 'true');
-        }
-        
-        // Always update description when modal opens
-        setTimeout(() => {
-            updateModelDescription();
-        }, 100);
     }
 }
 
 /**
- * Open setup modal for editing
+ * Get model info object
  */
-function openSetupModal(isEdit = false) {
-    showSetupModal();
-    if (isEdit && userConfig.apiKey) {
-        document.getElementById('setupApiKey').value = userConfig.apiKey;
-    }
-    if (isEdit && userConfig.modelId) {
-        document.getElementById('setupModelId').value = userConfig.modelId;
-        updateModelDescription();
-    }
-}
-
-/**
- * Update model description
- */
-function updateModelDescription() {
-    const modelIdSelect = document.getElementById('setupModelId');
-    const descDiv = document.getElementById('modelDescription');
-    
-    if (!descDiv || !modelIdSelect) {
-        return;
-    }
-    
-    const modelId = modelIdSelect.value;
-    
-    const modelInfo = {
+function getModelInfo() {
+    return {
         'gemini-2.5-pro-preview-tts': {
             title: 'Gemini 2.5 Pro Preview TTS',
             modelId: 'gemini-2.5-pro-preview-tts',
@@ -524,6 +553,21 @@ function updateModelDescription() {
             knowledgeCutoff: 'Unknown'
         }
     };
+}
+
+/**
+ * Update model description (for setup modal)
+ */
+function updateModelDescription() {
+    const modelIdSelect = document.getElementById('setupModelId');
+    const descDiv = document.getElementById('modelDescription');
+    
+    if (!descDiv || !modelIdSelect) {
+        return;
+    }
+    
+    const modelId = modelIdSelect.value;
+    const modelInfo = getModelInfo();
     
     if (modelId && modelInfo[modelId]) {
         const info = modelInfo[modelId];
@@ -555,20 +599,180 @@ function updateModelDescription() {
 }
 
 /**
+ * Update model description for main form
+ */
+function updateModelDescriptionForMainForm() {
+    const modelIdSelect = document.getElementById('modelIdSelect');
+    const descDiv = document.getElementById('modelDescription');
+    
+    if (!descDiv || !modelIdSelect) {
+        return;
+    }
+    
+    const modelId = modelIdSelect.value;
+    const modelInfo = getModelInfo();
+    
+    if (modelId && modelInfo[modelId]) {
+        const info = modelInfo[modelId];
+        descDiv.innerHTML = `
+            <div class="model-desc-header">
+                <h4 class="model-desc-title">${info.title}</h4>
+                <code class="model-desc-id">${info.modelId}</code>
+            </div>
+            <div class="model-desc-text">${info.description}</div>
+            <div class="model-desc-details">
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Context lengths:</span>
+                    <span class="detail-value">${info.contextLengths}</span>
+                </div>
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Pricing:</span>
+                    <span class="detail-value">Input: ${info.inputPrice} / Output: ${info.outputPrice}</span>
+                </div>
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Knowledge cut off:</span>
+                    <span class="detail-value">${info.knowledgeCutoff}</span>
+                </div>
+            </div>
+        `;
+        descDiv.style.display = 'block';
+    } else {
+        descDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Update model description for settings modal
+ */
+function updateModelDescriptionForSettings() {
+    const modelIdSelect = document.getElementById('settingModelId');
+    const descDiv = document.getElementById('settingModelDescription');
+    
+    if (!descDiv || !modelIdSelect) {
+        return;
+    }
+    
+    const modelId = modelIdSelect.value;
+    const modelInfo = getModelInfo();
+    
+    if (modelId && modelInfo[modelId]) {
+        const info = modelInfo[modelId];
+        descDiv.innerHTML = `
+            <div class="model-desc-header">
+                <h4 class="model-desc-title">${info.title}</h4>
+                <code class="model-desc-id">${info.modelId}</code>
+            </div>
+            <div class="model-desc-text">${info.description}</div>
+            <div class="model-desc-details">
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Context lengths:</span>
+                    <span class="detail-value">${info.contextLengths}</span>
+                </div>
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Pricing:</span>
+                    <span class="detail-value">Input: ${info.inputPrice} / Output: ${info.outputPrice}</span>
+                </div>
+                <div class="model-desc-detail-item">
+                    <span class="detail-label">Knowledge cut off:</span>
+                    <span class="detail-value">${info.knowledgeCutoff}</span>
+                </div>
+            </div>
+        `;
+        descDiv.style.display = 'block';
+    } else {
+        descDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Validate API key by making a test call through backend
+ */
+async function validateApiKey(apiKey) {
+    if (!apiKey || apiKey.trim().length === 0) {
+        return false;
+    }
+    
+    // Basic format validation - Gemini API keys typically start with AIza and are ~39 chars
+    if (!apiKey.startsWith('AIza') || apiKey.length < 35) {
+        logger.warn('API key format validation failed');
+        return false;
+    }
+    
+    try {
+        // Make a minimal test call to validate the API key
+        // Use a very short text to minimize cost
+        const testResponse = await fetch(CONFIG.apiSynthesizeEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: 'hi',
+                model_name: 'Puck',
+                expression: 'professional_neutral',
+                apiKey: apiKey,
+                modelId: 'gemini-2.5-flash-preview-tts'
+            })
+        });
+        
+        // If we get a 401 or 403, the API key is invalid
+        if (testResponse.status === 401 || testResponse.status === 403) {
+            logger.warn('API key validation failed: authentication error');
+            return false;
+        }
+        
+        // If we get any other error, it might be a different issue (model not available, etc.)
+        // But if we get past auth, the key is valid
+        if (testResponse.ok) {
+            logger.success('API key validated successfully');
+            return true;
+        }
+        
+        // For other status codes, check the error message
+        try {
+            const errorData = await testResponse.json();
+            if (errorData.error && (errorData.error.toLowerCase().includes('api key') || 
+                                   errorData.error.toLowerCase().includes('authentication') ||
+                                   errorData.error.toLowerCase().includes('unauthorized') ||
+                                   errorData.error.toLowerCase().includes('forbidden'))) {
+                return false;
+            }
+        } catch (e) {
+            // If we can't parse the error, check status code
+            if (testResponse.status >= 400 && testResponse.status < 500) {
+                // Client errors might indicate invalid key
+                return false;
+            }
+        }
+        
+        // If it's not an auth error, consider the key valid (other errors are acceptable for validation)
+        return true;
+    } catch (error) {
+        logger.error('API key validation error', error);
+        // For network errors, we can't determine validity, so throw to let caller handle
+        throw error;
+    }
+}
+
+/**
  * Handle setup form submission
  */
-function handleSetupSubmit(e) {
+async function handleSetupSubmit(e) {
     e.preventDefault();
+    
+    // Hide any previous errors
+    const setupErrorDiv = document.getElementById('setupErrorMessage');
+    if (setupErrorDiv) {
+        setupErrorDiv.style.display = 'none';
+    }
     
     logger.info('Setup form submission started');
     
     const apiKey = document.getElementById('setupApiKey').value.trim();
-    const modelId = document.getElementById('setupModelId').value;
     
     logger.debug('Setup form data extracted', {
       has_api_key: !!apiKey,
-      api_key_length: apiKey.length,
-      model_id: modelId
+      api_key_length: apiKey.length
     });
     
     if (!apiKey) {
@@ -577,37 +781,55 @@ function handleSetupSubmit(e) {
         return;
     }
     
-    if (!modelId) {
-        logger.warn('Setup submission rejected: Model ID missing');
-        showError('Please select a TTS model');
+    // Show loading state on button
+    const saveBtn = document.getElementById('saveSetupBtn');
+    const originalBtnText = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Validating...';
+    
+    // Validate API key before saving
+    logger.info('Validating API key');
+    try {
+        const isValid = await validateApiKey(apiKey);
+        if (!isValid) {
+            logger.warn('API key validation failed');
+            showError('Invalid API key. Please check your key and try again.');
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalBtnText;
+            return;
+        }
+        logger.success('API key validated successfully');
+    } catch (error) {
+        logger.error('Error validating API key', error);
+        showError('Failed to validate API key. Please check your connection and try again.');
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalBtnText;
         return;
     }
     
-    // Save user config
+    // Save user config (model ID will be set from main form)
     userConfig = {
         apiKey: apiKey,
-        modelId: modelId
+        modelId: 'gemini-2.5-flash-preview-tts' // Default model
     };
     
     logger.info('Saving user configuration to localStorage', {
-      model_id: modelId,
       api_key_length: apiKey.length
     });
     
     try {
         localStorage.setItem('geminiVoicesUserConfig', JSON.stringify(userConfig));
-        logger.success('User configuration saved successfully', {
-          model_id: modelId
-        });
+        logger.success('User configuration saved successfully');
         
-        // Show main app
+        // Show main app - this should always happen if save was successful
         showMainApp();
     } catch (error) {
         logger.error('Failed to save configuration to localStorage', error, {
-          model_id: modelId,
           api_key_length: apiKey.length
         });
         showError('Failed to save configuration. Please try again.');
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalBtnText;
     }
 }
 
@@ -623,19 +845,26 @@ function showMainApp() {
         return;
     }
     
-    // Hide setup modal
+    logger.info('Transitioning from setup modal to main app');
+    
+    // Hide setup modal first
     setupModal.style.display = 'none';
     
     // Show main container
     mainContainer.style.display = 'block';
     
-    // Initialize main app
-    try {
-        initializeMainApp();
-    } catch (error) {
+    logger.debug('UI transition completed', {
+      setup_modal_hidden: setupModal.style.display === 'none',
+      main_container_visible: mainContainer.style.display === 'block'
+    });
+    
+    // Initialize main app (non-blocking - errors won't prevent UI from showing)
+    initializeMainApp().catch(error => {
         logger.error('Error initializing main app', error);
-        showError('Failed to initialize application. Please refresh the page.');
-    }
+        // Don't prevent the app from showing - just log the error
+        // The app will show but some features might not work
+        console.warn('Some features may not be available. Please refresh if you encounter issues.');
+    });
 }
 
 /**
@@ -643,13 +872,19 @@ function showMainApp() {
  */
 async function initializeMainApp() {
     try {
+        logger.info('Initializing main application');
         await loadModels();
         loadSettings();
         setupEventListeners();
+        logger.success('Main application initialized successfully');
     } catch (error) {
-        console.error('Error in initializeMainApp:', error);
+        logger.error('Error in initializeMainApp', error);
         // Don't throw - let the app show even if initialization has issues
-        showError('Some features may not be available. Please refresh if you encounter issues.');
+        // Only show error if we're in the main app (not during setup)
+        const setupModal = document.getElementById('setupModal');
+        if (!setupModal || setupModal.style.display === 'none') {
+            showError('Some features may not be available. Please refresh if you encounter issues.');
+        }
     }
 }
 
@@ -704,13 +939,16 @@ async function handleFormSubmit(e) {
             return;
         }
         
+        // Get current model ID from form
+        const currentModelId = document.getElementById('modelIdSelect')?.value || userConfig.modelId;
+        
         // Include settings in request if available
         const requestBody = {
             text: trimmedText,
             model_name: modelName,
             expression: expression,
             apiKey: userConfig.apiKey,
-            modelId: userConfig.modelId
+            modelId: currentModelId
         };
         
         // Add custom settings if user has modified them
@@ -937,22 +1175,50 @@ function handleDownload() {
  * Show error message
  */
 function showError(message) {
-    const errorDiv = document.getElementById('errorMessage');
-    const errorText = errorDiv.querySelector('.error-text');
-    if (errorText) {
-        errorText.textContent = message;
+    // Check if we're in setup modal or main app
+    const setupModal = document.getElementById('setupModal');
+    const isSetupMode = setupModal && setupModal.style.display !== 'none';
+    
+    if (isSetupMode) {
+        // Show error in setup modal
+        const setupErrorDiv = document.getElementById('setupErrorMessage');
+        if (setupErrorDiv) {
+            const errorText = setupErrorDiv.querySelector('.error-text');
+            if (errorText) {
+                errorText.textContent = message;
+            } else {
+                setupErrorDiv.textContent = message;
+            }
+            setupErrorDiv.style.display = 'flex';
+            setupErrorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            // Fallback to console if element not found
+            console.error('Setup error:', message);
+        }
     } else {
-        errorDiv.textContent = message;
+        // Show error in main app
+        const errorDiv = document.getElementById('errorMessage');
+        if (errorDiv) {
+            const errorText = errorDiv.querySelector('.error-text');
+            if (errorText) {
+                errorText.textContent = message;
+            } else {
+                errorDiv.textContent = message;
+            }
+            errorDiv.style.display = 'flex';
+            
+            // Hide success message if shown
+            const successDiv = document.getElementById('successMessage');
+            if (successDiv) {
+                successDiv.style.display = 'none';
+            }
+            
+            errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            // Fallback to console if element not found
+            console.error('Error:', message);
+        }
     }
-    errorDiv.style.display = 'flex';
-    
-    // Hide success message if shown
-    const successDiv = document.getElementById('successMessage');
-    if (successDiv) {
-        successDiv.style.display = 'none';
-    }
-    
-    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /**
@@ -986,8 +1252,17 @@ function showSuccess(message) {
  * Hide error message
  */
 function hideError() {
+    // Hide error in main app
     const errorDiv = document.getElementById('errorMessage');
-    errorDiv.style.display = 'none';
+    if (errorDiv) {
+        errorDiv.style.display = 'none';
+    }
+    
+    // Hide error in setup modal
+    const setupErrorDiv = document.getElementById('setupErrorMessage');
+    if (setupErrorDiv) {
+        setupErrorDiv.style.display = 'none';
+    }
 }
 
 /**
@@ -1024,6 +1299,7 @@ function validateForm() {
     }
     
     const text = textInput.value.trim();
+    const modelId = document.getElementById('modelIdSelect')?.value;
     const model = modelSelect.value;
     const expression = expressionSelect.value;
     
@@ -1035,6 +1311,9 @@ function validateForm() {
         isValid = false;
     } else if (text.length > 5000) {
         validationMessage = 'Text is too long (max 5000 characters)';
+        isValid = false;
+    } else if (!modelId) {
+        validationMessage = 'Select a TTS model';
         isValid = false;
     } else if (!model) {
         validationMessage = 'Select a voice model';
@@ -1145,6 +1424,15 @@ function closeSettings() {
 }
 
 function loadSettingsIntoForm() {
+    // Load API key and model ID from userConfig
+    if (userConfig && userConfig.apiKey) {
+        document.getElementById('settingApiKey').value = userConfig.apiKey;
+    }
+    if (userConfig && userConfig.modelId) {
+        document.getElementById('settingModelId').value = userConfig.modelId;
+        updateModelDescriptionForSettings();
+    }
+    
     // Load from API or use defaults
     fetch(CONFIG.apiModelsEndpoint)
         .then(async res => {
@@ -1216,7 +1504,61 @@ function loadDefaultSettingsIntoForm() {
     document.getElementById('settingDefaultExpression').value = 'professional_neutral';
 }
 
-function saveSettings() {
+async function saveSettings() {
+    // Get API key and model ID from settings form
+    const apiKey = document.getElementById('settingApiKey').value.trim();
+    const modelId = document.getElementById('settingModelId').value;
+    
+    // Validate API key if it was changed
+    if (apiKey && apiKey !== userConfig?.apiKey) {
+        const statusSpan = document.getElementById('apiKeyStatus');
+        if (statusSpan) {
+            statusSpan.textContent = 'Validating...';
+            statusSpan.style.color = '#f59e0b';
+        }
+        
+        try {
+            const isValid = await validateApiKey(apiKey);
+            if (!isValid) {
+                showError('Invalid API key. Please check your key and try again.');
+                if (statusSpan) {
+                    statusSpan.textContent = '❌ Invalid';
+                    statusSpan.style.color = '#ef4444';
+                }
+                return;
+            }
+            if (statusSpan) {
+                statusSpan.textContent = '✓ Valid';
+                statusSpan.style.color = '#10b981';
+            }
+        } catch (error) {
+            logger.error('Error validating API key in settings', error);
+            showError('Failed to validate API key. Please check your connection and try again.');
+            if (statusSpan) {
+                statusSpan.textContent = '⚠ Error';
+                statusSpan.style.color = '#ef4444';
+            }
+            return;
+        }
+    }
+    
+    // Update userConfig with new API key and model ID
+    if (apiKey) {
+        userConfig.apiKey = apiKey;
+    }
+    if (modelId) {
+        userConfig.modelId = modelId;
+    }
+    
+    // Save userConfig
+    try {
+        localStorage.setItem('geminiVoicesUserConfig', JSON.stringify(userConfig));
+    } catch (error) {
+        logger.error('Failed to save user config', error);
+        showError('Failed to save API configuration. Please try again.');
+        return;
+    }
+    
     // Collect all settings from form
     currentSettings = {
         audio: {
@@ -1247,6 +1589,13 @@ function saveSettings() {
     // Update frontend config
     if (CONFIG) {
         CONFIG.sampleTexts = currentSettings.sampleTexts;
+    }
+    
+    // Update model ID in main form if changed
+    const modelIdSelect = document.getElementById('modelIdSelect');
+    if (modelIdSelect && modelId) {
+        modelIdSelect.value = modelId;
+        updateModelDescriptionForMainForm();
     }
     
     closeSettings();
@@ -1343,24 +1692,17 @@ function generateExample() {
         .catch(err => {
             logger.error('Failed to load expression instructions', err);
             showError('Failed to load expression instructions. Please refresh the page.');
-            // Show error message as fallback
+            // Fallback - show basic prompt without expression instructions
             const outputDiv = document.getElementById('exampleOutput');
             const promptPre = document.getElementById('examplePrompt');
-            if (promptPre) {
-                promptPre.textContent = 'Error: Could not load expression instructions.';
-            }
-            if (outputDiv) {
+            if (promptPre && outputDiv) {
+                const accentInstruction = "Say with a natural British English (UK) accent:";
+                const processedText = text.replace(/<modelname>/g, voice);
+                const prompt = `${accentInstruction} ${processedText}`;
+                promptPre.textContent = prompt;
                 outputDiv.style.display = 'block';
+                outputDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
-            // Fallback
-            const accentInstruction = "Say with a natural British English (UK) accent:";
-            const processedText = text.replace(/<modelname>/g, voice);
-            const prompt = `${accentInstruction} ${processedText}`;
-            
-            const outputDiv = document.getElementById('exampleOutput');
-            const promptPre = document.getElementById('examplePrompt');
-            promptPre.textContent = prompt;
-            outputDiv.style.display = 'block';
         });
 }
 
