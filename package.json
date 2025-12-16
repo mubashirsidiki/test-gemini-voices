@@ -2,6 +2,7 @@
   "name": "gemini-voices",
   "version": "1.0.0",
   "description": "Gemini TTS Voice Synthesis Application",
+  "type": "module",
   "main": "index.html",
   "scripts": {
     "deploy": "vercel"
