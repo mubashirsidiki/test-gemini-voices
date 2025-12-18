@@ -209,15 +209,32 @@ export default async function handler(req, res) {
       instruction_length: expressionInstruction.length 
     });
     
-    // Add accent instruction
-    const accentInstructionText = accentInstruction;
+    // Clean accent instruction (remove trailing colon if present, as we add it in the structure)
+    let accentInstructionText = accentInstruction.trim();
+    if (accentInstructionText.endsWith(':')) {
+        accentInstructionText = accentInstructionText.slice(0, -1).trim();
+    }
     
-    // Create combined prompt
-    const prompt = `${accentInstructionText} ${processedText}\n\n${expressionInstruction}`;
+    // Create structured prompt with clear separation between instructions and text to speak
+    const prompt = `INSTRUCTIONS FOR HOW TO SPEAK:
+1. Accent: ${accentInstructionText}
+2. Expression Style: ${expressionInstruction}
+
+TEXT TO SPEAK (say this exactly as written):
+${processedText}`;
+    
     serverLogger.debug('Prompt constructed', { 
       prompt_length: prompt.length,
       has_accent_instruction: !!accentInstructionText,
       has_expression_instruction: !!expressionInstruction
+    });
+    
+    // Log the full prompt for debugging
+    serverLogger.info('Full prompt to be sent to Gemini', {
+      prompt: prompt,
+      accent_instruction: accentInstructionText,
+      expression_instruction: expressionInstruction,
+      text_to_speak: processedText
     });
 
     // Generate speech using Gemini
@@ -388,10 +405,92 @@ export default async function handler(req, res) {
       has_api_key: !!req.body?.apiKey,
       has_model_id: !!req.body?.modelId
     });
-    res.status(500).json({ 
-      error: 'Voice synthesis failed', 
-      detail: error.message 
-    });
+    
+    // Check if response was already sent
+    if (res.headersSent) {
+      serverLogger.warn('Response already sent, cannot send error response');
+      return;
+    }
+    
+    // Handle specific error types
+    const errorMessage = error.message || 'Voice synthesis failed';
+    
+    try {
+      // Check for quota/rate limit errors
+      if (errorMessage.includes('429') || 
+          errorMessage.includes('quota') || 
+          errorMessage.includes('rate limit') ||
+          errorMessage.includes('Quota exceeded')) {
+        serverLogger.warn('Quota/rate limit exceeded', {
+          error_message: errorMessage.substring(0, 200) // Truncate for logging
+        });
+        
+        // Extract retry delay if available
+        let retryDelay = null;
+        const retryMatch = errorMessage.match(/retry in (\d+(?:\.\d+)?)s/i);
+        if (retryMatch) {
+          retryDelay = Math.ceil(parseFloat(retryMatch[1]));
+        }
+        
+        if (!res.headersSent) {
+          res.status(429).json({ 
+            error: 'API quota exceeded. You have reached your usage limit for this model. Please wait a moment and try again, or check your billing plan.',
+            errorType: 'quota_exceeded',
+            retryDelay: retryDelay,
+            detail: 'The free tier has limited requests. Consider upgrading your plan or waiting before retrying.'
+          });
+        }
+        return;
+      }
+      
+      // Check for authentication errors
+      if (errorMessage.includes('401') || 
+          errorMessage.includes('403') ||
+          errorMessage.includes('API key') ||
+          errorMessage.includes('authentication') ||
+          errorMessage.includes('unauthorized')) {
+        serverLogger.warn('Authentication error', {
+          error_message: errorMessage.substring(0, 200)
+        });
+        
+        if (!res.headersSent) {
+          res.status(401).json({ 
+            error: 'Invalid API key or authentication failed. Please check your API key in settings.',
+            errorType: 'authentication_error'
+          });
+        }
+        return;
+      }
+      
+      // Check for model not found errors
+      if (errorMessage.includes('404') || 
+          errorMessage.includes('not found') ||
+          (errorMessage.includes('model') && errorMessage.includes('not available'))) {
+        serverLogger.warn('Model not found error', {
+          error_message: errorMessage.substring(0, 200)
+        });
+        
+        if (!res.headersSent) {
+          res.status(404).json({ 
+            error: 'Model not found or unavailable. Please try a different model.',
+            errorType: 'model_not_found'
+          });
+        }
+        return;
+      }
+      
+      // Generic error response
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Voice synthesis failed', 
+          errorType: 'synthesis_error',
+          detail: errorMessage.substring(0, 500) // Limit detail length
+        });
+      }
+    } catch (responseError) {
+      // If we can't send the response, just log it
+      serverLogger.error('Failed to send error response', responseError);
+    }
   }
 }
 

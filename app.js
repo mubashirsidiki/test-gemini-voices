@@ -50,27 +50,60 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.debug('Setup form submit listener attached');
     }
     
+    // Validate button
+    const validateBtn = document.getElementById('validateBtn');
+    if (validateBtn) {
+        validateBtn.addEventListener('click', handleValidateClick);
+        logger.debug('Validate button click listener attached');
+        // Initially disable the button
+        validateBtn.disabled = true;
+    }
+    
+    // Save & Continue button
     if (saveSetupBtn) {
-        saveSetupBtn.addEventListener('click', (e) => {
-            // Don't prevent default - let the form submit naturally
-            // The form's submit handler will take care of everything
-            logger.debug('Save setup button clicked');
-            const form = document.getElementById('setupForm');
-            if (form) {
-                // Just ensure validation - if valid, form will submit naturally
-                if (!form.checkValidity()) {
-                    e.preventDefault();
-                    logger.warn('Form validation failed');
-                    form.reportValidity();
-                } else {
-                    logger.debug('Form validation passed, allowing natural form submission');
+        saveSetupBtn.addEventListener('click', handleSaveAndContinue);
+        logger.debug('Save & Continue button click listener attached');
+    }
+    
+    // Enable/disable Validate button based on API key input
+    const setupApiKey = document.getElementById('setupApiKey');
+    if (setupApiKey) {
+        // Function to update button state
+        const updateValidateButtonState = () => {
+            const apiKeyValue = setupApiKey.value.trim();
+            if (validateBtn) {
+                validateBtn.disabled = !apiKeyValue || apiKeyValue.length === 0;
+            }
+        };
+        
+        // Update on input
+        setupApiKey.addEventListener('input', () => {
+            updateValidateButtonState();
+            
+            // Reset validation state when user changes the key
+            if (isApiKeyValidated) {
+                isApiKeyValidated = false;
+                const saveBtn = document.getElementById('saveSetupBtn');
+                const setupSuccessDiv = document.getElementById('setupSuccessMessage');
+                const setupErrorDiv = document.getElementById('setupErrorMessage');
+                
+                if (validateBtn && saveBtn) {
+                    validateBtn.style.display = 'block';
+                    saveBtn.style.display = 'none';
                 }
-            } else {
-                logger.error('Setup form not found when button clicked');
-                e.preventDefault();
+                
+                // Hide success message when key changes
+                if (setupSuccessDiv) {
+                    setupSuccessDiv.style.display = 'none';
+                }
+                if (setupErrorDiv) {
+                    setupErrorDiv.style.display = 'none';
+                }
             }
         });
-        logger.debug('Save setup button click listener attached');
+        
+        // Initial state check
+        updateValidateButtonState();
     }
     
     // Now check user config
@@ -419,29 +452,9 @@ function setupEventListeners() {
         settingModelId.addEventListener('change', updateModelDescriptionForSettings);
     }
     
-    // Setup form
-    const setupForm = document.getElementById('setupForm');
-    const setupApiKey = document.getElementById('setupApiKey');
-    const setupModelId = document.getElementById('setupModelId');
-    const saveSetupBtn = document.getElementById('saveSetupBtn');
+    // Setup modal close handlers (already handled in DOMContentLoaded, but keep for reference)
     const closeSetupModalBtn = document.getElementById('closeSetupModalBtn');
     const setupModal = document.getElementById('setupModal');
-    
-    if (setupForm) {
-        setupForm.addEventListener('submit', handleSetupSubmit);
-    }
-    
-    // Also handle button click directly as fallback
-    if (saveSetupBtn) {
-        saveSetupBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (setupForm) {
-                setupForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-            } else {
-                handleSetupSubmit(e);
-            }
-        });
-    }
     
     // Close setup modal button
     if (closeSetupModalBtn) {
@@ -522,9 +535,37 @@ function showSetupModal() {
             mainContainer.style.display = 'none';
         }
         
+        // Reset validation state
+        isApiKeyValidated = false;
+        const validateBtn = document.getElementById('validateBtn');
+        const saveBtn = document.getElementById('saveSetupBtn');
+        const setupSuccessDiv = document.getElementById('setupSuccessMessage');
+        const setupErrorDiv = document.getElementById('setupErrorMessage');
+        const setupApiKey = document.getElementById('setupApiKey');
+        
+        if (validateBtn && saveBtn) {
+            validateBtn.style.display = 'block';
+            validateBtn.textContent = 'Validate';
+            saveBtn.style.display = 'none';
+        }
+        
+        // Hide success and error messages
+        if (setupSuccessDiv) {
+            setupSuccessDiv.style.display = 'none';
+        }
+        if (setupErrorDiv) {
+            setupErrorDiv.style.display = 'none';
+        }
+        
         // Load existing API key if editing
-        if (userConfig.apiKey) {
-            document.getElementById('setupApiKey').value = userConfig.apiKey;
+        if (userConfig.apiKey && setupApiKey) {
+            setupApiKey.value = userConfig.apiKey;
+        }
+        
+        // Update Validate button state based on API key input
+        if (validateBtn && setupApiKey) {
+            const apiKeyValue = setupApiKey.value.trim();
+            validateBtn.disabled = !apiKeyValue || apiKeyValue.length === 0;
         }
     }
 }
@@ -686,6 +727,7 @@ function updateModelDescriptionForSettings() {
 
 /**
  * Validate API key by making a test call through backend
+ * Uses the same implementation as gemini-key-validation
  */
 async function validateApiKey(apiKey) {
     if (!apiKey || apiKey.trim().length === 0) {
@@ -699,54 +741,41 @@ async function validateApiKey(apiKey) {
     }
     
     try {
-        // Make a minimal test call to validate the API key
-        // Use a very short text to minimize cost
-        const testResponse = await fetch(CONFIG.apiSynthesizeEndpoint, {
+        // Use dedicated check-key endpoint (same implementation as gemini-key-validation)
+        const testResponse = await fetch('/api/check-key', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                text: 'hi',
-                model_name: 'Puck',
-                expression: 'professional_neutral',
-                apiKey: apiKey,
-                modelId: 'gemini-2.5-flash-preview-tts'
+                key: apiKey
             })
         });
         
-        // If we get a 401 or 403, the API key is invalid
-        if (testResponse.status === 401 || testResponse.status === 403) {
-            logger.warn('API key validation failed: authentication error');
-            return false;
-        }
+        const data = await testResponse.json();
         
-        // If we get any other error, it might be a different issue (model not available, etc.)
-        // But if we get past auth, the key is valid
-        if (testResponse.ok) {
+        // If we get a 200, the key is valid
+        if (testResponse.ok && data.valid) {
             logger.success('API key validated successfully');
             return true;
         }
         
-        // For other status codes, check the error message
-        try {
-            const errorData = await testResponse.json();
-            if (errorData.error && (errorData.error.toLowerCase().includes('api key') || 
-                                   errorData.error.toLowerCase().includes('authentication') ||
-                                   errorData.error.toLowerCase().includes('unauthorized') ||
-                                   errorData.error.toLowerCase().includes('forbidden'))) {
-                return false;
-            }
-        } catch (e) {
-            // If we can't parse the error, check status code
-            if (testResponse.status >= 400 && testResponse.status < 500) {
-                // Client errors might indicate invalid key
-                return false;
-            }
+        // If we get a 401, 403, or 429, the key is invalid or has issues
+        if (testResponse.status === 401 || testResponse.status === 403 || testResponse.status === 429) {
+            logger.warn('API key validation failed', {
+                status: testResponse.status,
+                error: data.error
+            });
+            return false;
         }
         
-        // If it's not an auth error, consider the key valid (other errors are acceptable for validation)
-        return true;
+        // For other errors, log and return false
+        logger.warn('API key validation failed with unexpected error', {
+            status: testResponse.status,
+            error: data.error
+        });
+        return false;
+        
     } catch (error) {
         logger.error('API key validation error', error);
         // For network errors, we can't determine validity, so throw to let caller handle
@@ -757,65 +786,123 @@ async function validateApiKey(apiKey) {
 /**
  * Handle setup form submission
  */
-async function handleSetupSubmit(e) {
+// Track validation state
+let isApiKeyValidated = false;
+
+/**
+ * Handle validate button click
+ */
+async function handleValidateClick(e) {
     e.preventDefault();
     
-    // Hide any previous errors
+    // Hide any previous errors and success messages
     const setupErrorDiv = document.getElementById('setupErrorMessage');
+    const setupSuccessDiv = document.getElementById('setupSuccessMessage');
     if (setupErrorDiv) {
         setupErrorDiv.style.display = 'none';
     }
+    if (setupSuccessDiv) {
+        setupSuccessDiv.style.display = 'none';
+    }
     
-    logger.info('Setup form submission started');
+    logger.info('Validate button clicked');
     
     const apiKey = document.getElementById('setupApiKey').value.trim();
     
-    logger.debug('Setup form data extracted', {
+    logger.debug('API key extracted', {
       has_api_key: !!apiKey,
       api_key_length: apiKey.length
     });
     
     if (!apiKey) {
-        logger.warn('Setup submission rejected: API key missing');
+        logger.warn('Validation rejected: API key missing');
         showError('Please enter your API key');
         return;
     }
     
-    // Show loading state on button
+    // Get button references
+    const validateBtn = document.getElementById('validateBtn');
     const saveBtn = document.getElementById('saveSetupBtn');
-    const originalBtnText = saveBtn.textContent;
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Validating...';
+    const originalBtnText = validateBtn.textContent;
     
-    // Validate API key before saving
+    // Show validating state
+    validateBtn.disabled = true;
+    validateBtn.textContent = 'Validating...';
+    
     logger.info('Validating API key');
     try {
         const isValid = await validateApiKey(apiKey);
         if (!isValid) {
             logger.warn('API key validation failed');
             showError('Invalid API key. Please check your key and try again.');
-            saveBtn.disabled = false;
-            saveBtn.textContent = originalBtnText;
+            validateBtn.disabled = false;
+            validateBtn.textContent = originalBtnText;
+            isApiKeyValidated = false;
             return;
         }
         logger.success('API key validated successfully');
+        
+        // Show success message
+        const setupSuccessDiv = document.getElementById('setupSuccessMessage');
+        const setupErrorDiv = document.getElementById('setupErrorMessage');
+        if (setupSuccessDiv) {
+            setupSuccessDiv.style.display = 'flex';
+            // Hide error message if shown
+            if (setupErrorDiv) {
+                setupErrorDiv.style.display = 'none';
+            }
+        }
+        
+        // Validation passed - show Save & Continue button
+        isApiKeyValidated = true;
+        validateBtn.style.display = 'none';
+        saveBtn.style.display = 'block';
+        
     } catch (error) {
         logger.error('Error validating API key', error);
         showError('Failed to validate API key. Please check your connection and try again.');
-        saveBtn.disabled = false;
-        saveBtn.textContent = originalBtnText;
+        validateBtn.disabled = false;
+        validateBtn.textContent = originalBtnText;
+        isApiKeyValidated = false;
+    }
+}
+
+/**
+ * Handle save and continue button click
+ */
+async function handleSaveAndContinue(e) {
+    e.preventDefault();
+    
+    if (!isApiKeyValidated) {
+        logger.warn('Save attempted without validation');
+        showError('Please validate your API key first');
         return;
     }
+    
+    logger.info('Save & Continue button clicked');
+    
+    const apiKey = document.getElementById('setupApiKey').value.trim();
+    
+    if (!apiKey) {
+        logger.warn('Save rejected: API key missing');
+        showError('Please enter your API key');
+        return;
+    }
+    
+    const saveBtn = document.getElementById('saveSetupBtn');
+    const originalBtnText = saveBtn.textContent;
+    
+    // Show saving state
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    
+    logger.info('Saving user configuration');
     
     // Save user config (model ID will be set from main form)
     userConfig = {
         apiKey: apiKey,
         modelId: 'gemini-2.5-flash-preview-tts' // Default model
     };
-    
-    logger.info('Saving user configuration to localStorage', {
-      api_key_length: apiKey.length
-    });
     
     try {
         localStorage.setItem('geminiVoicesUserConfig', JSON.stringify(userConfig));
@@ -830,6 +917,20 @@ async function handleSetupSubmit(e) {
         showError('Failed to save configuration. Please try again.');
         saveBtn.disabled = false;
         saveBtn.textContent = originalBtnText;
+    }
+}
+
+/**
+ * Handle setup form submission (legacy - now handled by separate buttons)
+ */
+async function handleSetupSubmit(e) {
+    e.preventDefault();
+    // This is now handled by separate validate and save handlers
+    // But keep for form submission fallback
+    if (!isApiKeyValidated) {
+        handleValidateClick(e);
+    } else {
+        handleSaveAndContinue(e);
     }
 }
 
@@ -1000,7 +1101,12 @@ async function handleFormSubmit(e) {
                 logger.error('Failed to parse error response JSON', e);
                 throw new Error(`Request failed with status ${response.status}: ${response.statusText}`);
             }
-            throw new Error(errorData.error || errorData.detail || 'Synthesis failed');
+            
+            // Create error object with response data for better handling
+            const error = new Error(errorData.error || errorData.detail || 'Synthesis failed');
+            error.response = response;
+            error.errorData = errorData;
+            throw error;
         }
 
         let data;
@@ -1074,17 +1180,47 @@ async function handleFormSubmit(e) {
         });
         
         let errorMessage = CONFIG.errorMessages.synthesisFailed;
+        let errorData = error.errorData || null;
         
-        // Provide specific error messages
-        if (error.message.includes('API key') || error.message.includes('401') || error.message.includes('403')) {
-            errorMessage = 'Invalid API key. Please check your configuration.';
+        // Check for quota/rate limit errors
+        if (errorData?.errorType === 'quota_exceeded' || 
+            error.message?.includes('429') || 
+            error.message?.includes('quota') || 
+            error.message?.includes('rate limit') ||
+            error.message?.includes('Quota exceeded')) {
+            errorMessage = errorData?.error || 'API quota exceeded. You have reached your usage limit. Please wait a moment and try again, or check your billing plan.';
+            if (errorData?.retryDelay) {
+                errorMessage += ` (Retry in ${errorData.retryDelay} seconds)`;
+            }
+            logger.warn('Quota exceeded error detected', { retryDelay: errorData?.retryDelay });
+        } 
+        // Check for authentication errors
+        else if (errorData?.errorType === 'authentication_error' ||
+                 error.message?.includes('API key') || 
+                 error.message?.includes('401') || 
+                 error.message?.includes('403') ||
+                 error.message?.includes('authentication') ||
+                 error.message?.includes('unauthorized')) {
+            errorMessage = errorData?.error || 'Invalid API key. Please check your configuration in settings.';
             logger.warn('API key authentication error detected');
-        } else if (error.message.includes('model') || error.message.includes('404')) {
-            errorMessage = 'Selected model is not available. Please try a different model.';
+        } 
+        // Check for model not found errors
+        else if (errorData?.errorType === 'model_not_found' ||
+                 error.message?.includes('model') || 
+                 error.message?.includes('404')) {
+            errorMessage = errorData?.error || 'Selected model is not available. Please try a different model.';
             logger.warn('Model not found error detected', { model_name: modelName });
-        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        } 
+        // Check for network errors
+        else if (error.message?.includes('network') || 
+                 error.message?.includes('fetch') ||
+                 error.message?.includes('Failed to fetch')) {
             errorMessage = 'Network error. Please check your connection and try again.';
             logger.warn('Network error detected');
+        } 
+        // Use error message from response or error object
+        else if (errorData?.error) {
+            errorMessage = errorData.error;
         } else if (error.message) {
             errorMessage = error.message;
         }
@@ -1411,6 +1547,12 @@ function openSettings() {
     // Load current config values into settings form
     loadSettingsIntoForm();
     
+    // Load accent instruction into live example
+    const exampleAccentInput = document.getElementById('exampleAccentInstruction');
+    if (exampleAccentInput) {
+        exampleAccentInput.value = currentSettings.accentInstruction || "Say with a natural British English (UK) accent:";
+    }
+    
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 }
@@ -1646,6 +1788,9 @@ function switchTab(tabName) {
  */
 function generateExample() {
     const text = document.getElementById('exampleText').value;
+    const accentInstruction = document.getElementById('exampleAccentInstruction').value.trim() || 
+                              currentSettings.accentInstruction || 
+                              "Say with a natural British English (UK) accent:";
     const voice = document.getElementById('exampleVoice').value;
     const expression = document.getElementById('exampleExpression').value;
     
@@ -1668,14 +1813,24 @@ function generateExample() {
         })
         .then(data => {
             const expressionInstructions = data.expression_instructions || {};
-            const accentInstruction = currentSettings.accentInstruction || "Say with a natural British English (UK) accent:";
             const expressionInstruction = expressionInstructions[expression] || '';
             
             // Process text (replace placeholder if exists)
             const processedText = text.replace(/<modelname>/g, voice);
             
-            // Build prompt
-            const prompt = `${accentInstruction} ${processedText}\n\n${expressionInstruction}`;
+            // Clean accent instruction (remove trailing colon if present)
+            let cleanAccentInstruction = accentInstruction.trim();
+            if (cleanAccentInstruction.endsWith(':')) {
+                cleanAccentInstruction = cleanAccentInstruction.slice(0, -1).trim();
+            }
+            
+            // Build structured prompt with clear separation
+            const prompt = `INSTRUCTIONS FOR HOW TO SPEAK:
+1. Accent: ${cleanAccentInstruction}
+2. Expression Style: ${expressionInstruction}
+
+TEXT TO SPEAK (say this exactly as written):
+${processedText}`;
             
             // Show result
             const outputDiv = document.getElementById('exampleOutput');
@@ -1696,9 +1851,17 @@ function generateExample() {
             const outputDiv = document.getElementById('exampleOutput');
             const promptPre = document.getElementById('examplePrompt');
             if (promptPre && outputDiv) {
-                const accentInstruction = "Say with a natural British English (UK) accent:";
+                let fallbackAccentInstruction = accentInstruction || "Say with a natural British English (UK) accent";
+                // Remove trailing colon if present
+                if (fallbackAccentInstruction.endsWith(':')) {
+                    fallbackAccentInstruction = fallbackAccentInstruction.slice(0, -1).trim();
+                }
                 const processedText = text.replace(/<modelname>/g, voice);
-                const prompt = `${accentInstruction} ${processedText}`;
+                const prompt = `INSTRUCTIONS FOR HOW TO SPEAK:
+1. Accent: ${fallbackAccentInstruction}
+
+TEXT TO SPEAK (say this exactly as written):
+${processedText}`;
                 promptPre.textContent = prompt;
                 outputDiv.style.display = 'block';
                 outputDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

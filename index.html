@@ -49,14 +49,20 @@
                         </div>
                     </div>
                     
-                    <div id="setupErrorMessage" class="error-message" style="display: none;">
+                    <div id="setupErrorMessage" class="error-message setup-error-message" style="display: none;">
                         <span class="error-icon">⚠️</span>
                         <span class="error-text"></span>
+                    </div>
+                    
+                    <div id="setupSuccessMessage" class="success-message setup-success-message" style="display: none;">
+                        <span class="success-icon">✓</span>
+                        <span class="success-text">API key validated successfully!</span>
                     </div>
                 </form>
             </div>
             <div class="setup-footer">
-                <button type="submit" form="setupForm" id="saveSetupBtn" class="btn-primary">Save & Continue</button>
+                <button type="button" id="validateBtn" class="btn-primary">Validate</button>
+                <button type="button" id="saveSetupBtn" class="btn-primary" style="display: none;">Save & Continue</button>
             </div>
         </div>
     </div>
@@ -349,6 +355,7 @@
                                     <li><strong>Text</strong> - The text to synthesize</li>
                                     <li><strong>Voice Model</strong> - e.g., "Puck", "Kore" (selected from dropdown)</li>
                                     <li><strong>Expression</strong> - e.g., "professional_neutral" or "warm_friendly"</li>
+                                    <li><strong>Accent Instruction</strong> - Customizable instruction for accent/dialect (default: "Say with a natural British English (UK) accent:")</li>
                                 </ul>
                             </div>
                         </div>
@@ -373,12 +380,23 @@
                             <div class="step-number">3</div>
                             <div class="step-content">
                                 <h4>Prompt Construction</h4>
-                                <p>All instructions are combined into one prompt:</p>
+                                <p>The prompt is structured with clear separation between <strong>instructions on how to speak</strong> and <strong>the actual text to be spoken</strong>:</p>
                                 <div class="code-example">
                                     <div class="code-label">Final Prompt Sent to Gemini:</div>
-                                    <pre><code>Say with a natural British English (UK) accent: Hi, you're through to [Business Name]. My name's Puck — how may I help you today?
+                                    <pre><code>INSTRUCTIONS FOR HOW TO SPEAK:
+1. Accent: Say with a natural British English (UK) accent
+2. Expression Style: Speak in a professional and neutral tone. Maintain a formal, business-like demeanor with clear articulation. Use precise language, avoid emotional expressions, and keep your delivery measured and objective. This tone is appropriate for corporate communications, technical explanations, and formal interactions where clarity and professionalism are paramount.
 
-Speak in a professional and neutral tone. Maintain a formal, business-like demeanor with clear articulation. Use precise language, avoid emotional expressions, and keep your delivery measured and objective. This tone is appropriate for corporate communications, technical explanations, and formal interactions where clarity and professionalism are paramount.</code></pre>
+TEXT TO SPEAK (say this exactly as written):
+Hi, you're through to [Business Name]. My name's Puck — how may I help you today?</code></pre>
+                                </div>
+                                <div class="note-box" style="margin-top: 1rem;">
+                                    <strong>Important:</strong> This structure clearly separates:
+                                    <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                                        <li><strong>INSTRUCTIONS</strong> - How to speak (accent, tone, style)</li>
+                                        <li><strong>TEXT TO SPEAK</strong> - What to say exactly (your input text)</li>
+                                    </ul>
+                                    This prevents confusion and ensures Gemini speaks only the text you provide, using the specified accent and expression style.
                                 </div>
                             </div>
                         </div>
@@ -418,16 +436,24 @@ Speak in a professional and neutral tone. Maintain a formal, business-like demea
                                 <h4>What Each Input Does</h4>
                                 <div class="input-breakdown">
                                     <div class="input-item">
-                                        <strong>Text Prompt</strong>
-                                        <p>Combined instruction + text + expression guidance. Tells Gemini <em>what</em> to say and <em>how</em> to say it.</p>
+                                        <strong>Accent Instruction</strong>
+                                        <p>Controls the accent, dialect, or regional pronunciation. Goes in the "INSTRUCTIONS FOR HOW TO SPEAK" section. Default is "Say with a natural British English (UK) accent" but can be customized in settings.</p>
+                                    </div>
+                                    <div class="input-item">
+                                        <strong>Expression Instruction</strong>
+                                        <p>Controls tone and delivery style (professional/neutral, warm/friendly). Goes in the "INSTRUCTIONS FOR HOW TO SPEAK" section. Tells Gemini <em>how</em> to speak.</p>
+                                    </div>
+                                    <div class="input-item">
+                                        <strong>Text to Speak</strong>
+                                        <p>Your actual text input. Goes in the "TEXT TO SPEAK" section. This is <em>what</em> Gemini will say exactly as written. Only this text is spoken, not the instructions.</p>
                                     </div>
                                     <div class="input-item">
                                         <strong>Voice Name</strong>
-                                        <p>Selects which prebuilt voice to use (Puck, Kore, etc.). This determines the voice character/timbre.</p>
+                                        <p>Selects which prebuilt voice to use (Puck, Kore, etc.). This determines the voice character/timbre. Set in the API call structure, not in the prompt text.</p>
                                     </div>
                                     <div class="input-item">
                                         <strong>Response Modality</strong>
-                                        <p>Requests AUDIO output instead of text. Tells Gemini to generate speech.</p>
+                                        <p>Requests AUDIO output instead of text. Tells Gemini to generate speech. Set in the API call structure.</p>
                                     </div>
                                 </div>
                             </div>
@@ -451,6 +477,10 @@ Speak in a professional and neutral tone. Maintain a formal, business-like demea
                                 <div class="example-input">
                                     <label>Text:</label>
                                     <input type="text" id="exampleText" placeholder="Enter text to see example" value="Hi, you're through to [Business Name]. My name's Vera — how may I help you today?">
+                                </div>
+                                <div class="example-input">
+                                    <label>Accent Instruction:</label>
+                                    <input type="text" id="exampleAccentInstruction" placeholder="Enter accent instruction" value="Say with a natural British English (UK) accent:">
                                 </div>
                                 <div class="example-input">
                                     <label>Voice Model:</label>

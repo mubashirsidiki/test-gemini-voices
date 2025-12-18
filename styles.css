@@ -1123,53 +1123,54 @@ audio::-webkit-media-controls-panel {
 }
 
 .model-description {
-    margin-top: 0.75rem;
-    padding: 1.25rem;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.9rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
     color: var(--text-secondary);
-    line-height: 1.6;
+    line-height: 1.5;
     display: none;
     animation: fadeIn 0.3s ease-in;
 }
 
 .model-desc-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
 }
 
 .model-desc-title {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.25rem 0;
 }
 
 .model-desc-id {
     display: inline-block;
-    padding: 0.25rem 0.5rem;
+    padding: 0.2rem 0.4rem;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 4px;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
     color: var(--accent);
 }
 
 .model-desc-text {
     color: var(--text-secondary);
-    line-height: 1.6;
-    margin-bottom: 1rem;
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
 }
 
 .model-desc-details {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding-top: 0.75rem;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
     border-top: 1px solid var(--border);
 }
 
@@ -1177,7 +1178,7 @@ audio::-webkit-media-controls-panel {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .detail-label {
@@ -1222,6 +1223,17 @@ audio::-webkit-media-controls-panel {
     border: 1px solid var(--accent);
     border-radius: 8px;
     margin-top: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.setup-error-message {
+    margin-top: 1.5rem;
+    margin-bottom: 0;
+}
+
+.setup-success-message {
+    margin-top: 1.5rem;
+    margin-bottom: 0;
 }
 
 .privacy-icon {
